@@ -502,7 +502,12 @@ def min_max(logits):
     logits = (logits - logits_min) / (logits_max - logits_min)
     return logits
 
-def visualize(image, heatmaps, alpha=0.6, text_prompts: List=None, save_path: Optional=None):
+def visualize(image,
+              heatmaps,
+              alpha=0.6,
+              text_prompts: List=None,
+              save_path: Optional=None,
+              title: Optional[str]=None):
     W, H = heatmaps.shape[-2:]
     if isinstance(image, Image.Image):
         image = image.resize((W, H))
@@ -517,12 +522,6 @@ def visualize(image, heatmaps, alpha=0.6, text_prompts: List=None, save_path: Op
     if text_prompts is None:
         text_prompts = [p for p in range(heatmaps.shape[0])]
 
-    # plot image
-    plt.imshow(image)
-    plt.axis('off')
-    plt.tight_layout()
-    plt.show()
-
     if heatmaps.ndim > 3:
         heatmaps = heatmaps.squeeze(0)
     heatmaps = heatmaps.detach().cpu().numpy()
@@ -532,15 +531,25 @@ def visualize(image, heatmaps, alpha=0.6, text_prompts: List=None, save_path: Op
     heat_maps = [cv2.applyColorMap(logit, cv2.COLORMAP_JET) for logit in heatmaps]
 
     vizs = [(1 - alpha) * img_cv + alpha * heat_map for heat_map in heat_maps]
+
+    fig, axes = plt.subplots(1, 1 + len(vizs), figsize=(8,4))
+    axes[0].imshow(image)
+    axes[0].axis('off')
+    if title is not None:
+        axes[0].set_title(title)
+
     for i, viz in enumerate(vizs):
         viz = cv2.cvtColor(viz.astype('uint8'), cv2.COLOR_BGR2RGB)
-        plt.imshow(viz)
-        plt.axis('off')
+        
+        axes[i+1].imshow(viz)
+        axes[i+1].axis('off')
+        if text_prompts is not None and len(text_prompts) > i:
+            axes[i+1].set_title(str(text_prompts[i]))
+
         plt.tight_layout()
-        plt.show()
         if save_path is not None:
             plt.savefig(f'heatmap_{text_prompts[i]}.png')
-
+    plt.show()
 
 def list_pretrained():
     openclip_list_ = open_clip.list_pretrained()
