@@ -394,6 +394,29 @@ def hooked_resblock_timm_forward(self, x: torch.Tensor) -> torch.Tensor:
     return x
 
 
+def hooked_timm_attention_forward(self, x: torch.Tensor, attn_mask=None) -> torch.Tensor:
+    B, N, C = x.shape
+    qkv = self.qkv(x).reshape(B, N, 3, self.num_heads, self.head_dim).permute(2, 0, 3, 1, 4)
+    q, k, v = qkv.unbind(0)
+    q, k = self.q_norm(q), self.k_norm(k)
+
+    q = q * self.scale
+    attn = q @ k.transpose(-2, -1)
+    if attn_mask is not None:
+        attn = attn + attn_mask
+    attn = attn.softmax(dim=-1)
+    attn = self.attn_drop(attn)
+    attn.retain_grad()
+    self.attn_probs = attn
+
+    x = attn @ v
+    x = x.transpose(1, 2).reshape(B, N, C)
+    x = self.norm(x)
+    x = self.proj(x)
+    x = self.proj_drop(x)
+    return x
+
+
 # ------------ Hooked TimmModel's Attentional Pooler ------------
 def hooked_attentional_pooler_timm_forward(self, x):
     B, N, C = x.shape

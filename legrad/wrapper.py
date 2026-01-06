@@ -7,6 +7,10 @@ from torchvision.transforms import Compose, Resize, InterpolationMode
 import open_clip
 from open_clip.transformer import VisionTransformer
 from open_clip.timm_model import TimmModel
+try:
+    from timm.models.vision_transformer import VisionTransformer as TimmVisionTransformer
+except Exception:
+    TimmVisionTransformer = None
 from einops import rearrange
 
 from .utils import hooked_resblock_forward, \
@@ -15,7 +19,8 @@ from .utils import hooked_resblock_forward, \
     hooked_attentional_pooler_timm_forward, \
     vit_dynamic_size_forward, \
     min_max, \
-    hooked_torch_multi_head_attention_forward
+    hooked_torch_multi_head_attention_forward, \
+    hooked_timm_attention_forward
 
 
 class LeWrapper(nn.Module):
@@ -23,12 +28,18 @@ class LeWrapper(nn.Module):
     Wrapper around OpenCLIP to add LeGrad to OpenCLIP's model while keep all the functionalities of the original model.
     """
 
-    def __init__(self, model, layer_index=-2):
+    def __init__(self, model, layer_index=-2, layer_indices=None):
         super(LeWrapper, self).__init__()
         # ------------ copy of model's attributes and methods ------------
         for attr in dir(model):
-            if not attr.startswith('__'):
-                setattr(self, attr, getattr(model, attr))
+            if attr.startswith('__') or attr.startswith('_'):
+                continue
+            if hasattr(self, attr):
+                continue
+            setattr(self, attr, getattr(model, attr))
+        if not hasattr(self, 'visual'):
+            self.visual = model
+        self.layer_indices = layer_indices
 
         # ------------ activate hooks & gradient ------------
         self._activate_hooks(layer_index=layer_index)
@@ -66,6 +77,14 @@ class LeWrapper(nn.Module):
             self.starting_depth = layer_index if layer_index >= 0 else len(
                 self.visual.trunk.blocks) + layer_index
             self._activate_timm_attn_pool_hooks(layer_index=layer_index)
+        elif TimmVisionTransformer is not None and isinstance(self.visual, TimmVisionTransformer):
+            self.model_type = 'timm_vit'
+            self.patch_size = self.visual.patch_embed.patch_size[0]
+            if self.layer_indices is None:
+                self.starting_depth = layer_index if layer_index >= 0 else len(
+                    self.visual.blocks) + layer_index
+                self.layer_indices = list(range(self.starting_depth, len(self.visual.blocks)))
+            self._activate_timm_vit_hooks()
         else:
             raise ValueError(
                 "Model currently not supported, see legrad.list_pretrained() for a list of available models")
@@ -133,6 +152,19 @@ class LeWrapper(nn.Module):
         self.visual.trunk.attn_pool.forward = types.MethodType(hooked_attentional_pooler_timm_forward,
                                                                self.visual.trunk.attn_pool)
 
+    def _activate_timm_vit_hooks(self):
+        for name, param in self.named_parameters():
+            param.requires_grad = False
+            if name.startswith('blocks'):
+                depth = int(name.split('blocks.')[-1].split('.')[0])
+                if depth in self.layer_indices:
+                    param.requires_grad = True
+
+        for layer in self.layer_indices:
+            block = self.visual.blocks[layer]
+            block.attn.forward = types.MethodType(hooked_timm_attention_forward, block.attn)
+            block.forward = types.MethodType(hooked_resblock_timm_forward, block)
+
     def compute_legrad(self, text_embedding, image=None, apply_correction=True):
         if 'clip' in self.model_type:
             return self.compute_legrad_clip(text_embedding, image)
@@ -140,6 +172,8 @@ class LeWrapper(nn.Module):
             return self.compute_legrad_siglip(text_embedding, image, apply_correction=apply_correction)
         elif 'coca' in self.model_type:
             return self.compute_legrad_coca(text_embedding, image)
+        elif 'timm_vit' in self.model_type:
+            return self.compute_legrad_timm(text_embedding, image)
 
     def compute_legrad_clip(self, text_embedding, image=None):
         num_prompts = text_embedding.shape[0]
@@ -227,6 +261,40 @@ class LeWrapper(nn.Module):
 
         # Min-Max Norm
         accum_expl_map = (accum_expl_map - accum_expl_map.min()) / (accum_expl_map.max() - accum_expl_map.min())
+        return accum_expl_map
+
+    def compute_legrad_timm(self, text_embedding, image=None):
+        if image is not None:
+            _ = self.forward_features(image)
+
+        blocks_list = list(dict(self.visual.blocks.named_children()).values())
+        num_tokens = blocks_list[-1].feat_post_mlp.shape[1] - 1
+        w = h = int(math.sqrt(num_tokens))
+
+        accum_expl_map = 0
+        layerwise_maps = []
+        for layer in self.layer_indices:
+            self.visual.zero_grad()
+            block = blocks_list[layer]
+
+            cls_feat = block.feat_post_mlp[:, 0, :]
+            cls_feat = F.normalize(self.visual.norm(cls_feat), dim=-1)
+
+            sim = text_embedding @ cls_feat.transpose(-1, -2)
+            one_hot = torch.sum(sim)
+
+            attn_map = block.attn.attn_probs
+            grad = torch.autograd.grad(one_hot, [attn_map], retain_graph=True, create_graph=True)[0]
+            grad = torch.clamp(grad, min=0.)
+
+            image_relevance = grad.mean(dim=1).mean(dim=1)[:, 1:]
+            expl_map = rearrange(image_relevance, 'b (w h) -> b 1 w h', w=w, h=h)
+            accum_expl_map += expl_map
+            layerwise_maps.append(expl_map.permute(2, 3, 0, 1))
+
+        accum_expl_map = min_max(accum_expl_map)
+        accum_expl_map = F.interpolate(accum_expl_map, scale_factor=self.patch_size, mode='bilinear')
+        self.layerwise_maps = layerwise_maps
         return accum_expl_map
 
     def _init_empty_embedding(self):
