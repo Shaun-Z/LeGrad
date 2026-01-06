@@ -273,7 +273,7 @@ class LeWrapper(nn.Module):
 
         accum_expl_map = 0
         layerwise_maps = []
-        for layer in self.layer_indices:
+        for i, layer in enumerate(self.layer_indices):
             self.visual.zero_grad()
             block = blocks_list[layer]
 
@@ -284,7 +284,8 @@ class LeWrapper(nn.Module):
             one_hot = torch.sum(sim)
 
             attn_map = block.attn.attn_probs
-            grad = torch.autograd.grad(one_hot, [attn_map], retain_graph=True, create_graph=True)[0]
+            retain = i != (len(self.layer_indices) - 1)
+            grad = torch.autograd.grad(one_hot, [attn_map], retain_graph=retain, create_graph=False)[0]
             grad = torch.clamp(grad, min=0.)
 
             image_relevance = grad.mean(dim=1).mean(dim=1)[:, 1:]
