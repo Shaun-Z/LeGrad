@@ -1,0 +1,20 @@
+[project]
+name = "legrad-torch"
+version = "1.0.0"
+description = "LeGrad toolkit."
+authors = [
+  { name="Shaun Z", email="xiangyuzhou823@gmail.com" }
+]
+readme = "README.md"
+requires-python = ">=3.10"
+license = { file="LICENSE" }
+
+dependencies = [
+]
+
+[project.urls]
+Homepage = "https://github.com/Shaun-Z/LeGrad"
+
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
