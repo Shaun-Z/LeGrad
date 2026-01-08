@@ -12,13 +12,13 @@ from legrad.detect import detect_and_wrap
 
 @pytest.fixture
 def model():
-    model, _, _ = open_clip.create_model_and_transforms('ViT-B-16', pretrained='laion2b_s34b_b88k')
+    model, _, _ = open_clip.create_model_and_transforms('ViT-B-16', pretrained=False)
     model.eval()
     return model
 
 @pytest.fixture
 def preprocess():
-    _, _, preprocess = open_clip.create_model_and_transforms('ViT-B-16', pretrained='laion2b_s34b_b88k')
+    _, _, preprocess = open_clip.create_model_and_transforms('ViT-B-16', pretrained=False)
     return preprocess
 
 @pytest.fixture
@@ -46,6 +46,7 @@ def test_feature_extraction(model, batch_size, layer_indices):
     assert features.shape == (batch_size, 512)
     assert wrapper._requested_hook_indices == layer_indices
 
+@pytest.mark.skipif(True, reason="Requires network access to download image")
 @pytest.mark.parametrize("layer_indices, prompts", [
                                 ([0,11],["a photo of a cat",
                                          "a photo of a remote controller"]),
