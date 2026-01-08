@@ -1,4 +1,17 @@
 # %%
+"""
+OpenCLIP ViT-B-16 Example Script
+
+This script demonstrates how to use the legrad (Layerwise Concept Capture and Fusion)
+library with an OpenCLIP ViT-B-16 model.
+
+OpenCLIP provides text encoders for generating concept vectors from text prompts.
+
+The OpenCLIP backend uses a gradient-based approach:
+- Captures attention weights from specified layers
+- Computes gradients of similarity w.r.t. attention weights
+- Generates explanation maps in (H, W, B, num_concepts) format
+"""
 import requests
 from PIL import Image
 import numpy as np
@@ -37,8 +50,15 @@ image = preprocess(Image.open(requests.get(url, stream=True).raw)).unsqueeze(0).
 
 # %%
 features = wrapper.encode_image(image)
+print(f"Features shape: {features.shape}")
 
 # %%
+# Check captured attention weights from specified layers
+attn_weights = torch.stack(wrapper.attn_weights, dim=0)
+print(f"Attention weights shape: {attn_weights.shape}")  # (num_layers, B*num_heads, N, N)
+
+# %%
+# Compute concept activation maps using gradient-based approach
 wrapper.dot_concept_vectors(text_embeddings)
 
 # %%

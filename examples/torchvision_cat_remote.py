@@ -8,6 +8,11 @@ library with a torchvision-implemented ViT-B-16 model.
 Unlike OpenCLIP/CLIP models which have text encoders for generating concept vectors,
 torchvision models are pure vision models. This example uses concept vectors extracted from
 the classification head weights corresponding to ImageNet classes (e.g., "tabby cat").
+
+The torchvision backend now uses the same gradient-based approach as OpenCLIP:
+- Captures attention weights from specified layers
+- Computes gradients of similarity w.r.t. attention weights
+- Generates explanation maps in (H, W, B, num_concepts) format
 """
 
 # %%
@@ -75,7 +80,12 @@ output = wrapper(image)
 print(f"Model output shape: {output.shape}")
 
 # %%
-# Compute concept activation maps
+# Check captured attention weights from specified layers
+attn_weights = torch.stack(wrapper.attn_weights, dim=0)
+print(f"Attention weights shape: {attn_weights.shape}")  # (num_layers, B*num_heads, N, N)
+
+# %%
+# Compute concept activation maps using gradient-based approach
 wrapper.dot_concept_vectors(concept_vectors)
 
 # %%
