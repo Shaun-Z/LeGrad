@@ -59,9 +59,10 @@ def Attention_forward_with_weights(
     
     attn_output = torch.bmm(attn, v)  # (B*num_heads, N, head_dim)
 
-    # Reshape back to (B, N, attn_dim)
+    # Reshape back to (B, N, embed_dim)
+    # Note: use num_heads * head_dim instead of attn_dim for backward compatibility with older timm versions
     attn_output = attn_output.reshape(B, self.num_heads, N, self.head_dim)
-    attn_output = attn_output.transpose(1, 2).reshape(B, N, self.attn_dim)
+    attn_output = attn_output.transpose(1, 2).reshape(B, N, self.num_heads * self.head_dim)
     attn_output = self.norm(attn_output)
     attn_output = self.proj(attn_output)
     attn_output = self.proj_drop(attn_output)
