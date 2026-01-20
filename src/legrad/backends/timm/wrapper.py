@@ -178,7 +178,7 @@ class TimmCVWrapper(CopyAttrWrapper):
         # output is (attn_output, attn_weights)
         # attn_weights: (B*num_heads, N, N)
         self.attn_weights.append(output[1])
-        # Save input tokens - input[0] is x which is (B, N, D) after norm1
+        # Save the normalized input to the attention module: input[0] is (B, N, D)
         self.input_tokens.append(input[0])
     
     def _save_block_hook(self, module, input, output):

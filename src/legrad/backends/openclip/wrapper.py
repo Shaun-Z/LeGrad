@@ -171,6 +171,38 @@ class OpenCLIPCVWrapper(CopyAttrWrapper):
     def _save_block_hook(self, module, input, output):
         self.block_outputs.append(output)
 
+    def _compute_deepest_layer_similarity(self, block_output: torch.Tensor, 
+                                          concept_vectors: torch.Tensor) -> torch.Tensor:
+        """Compute similarity for the deepest layer using projected 512 dim space.
+        
+        Args:
+            block_output: (N, B, 768) - block output in internal space
+            concept_vectors: (M, 512) - concept vectors in projected space
+            
+        Returns:
+            sim: (M,) - similarity scores summed over batch
+        """
+        inter_feat = block_output.mean(dim=0)  # (B, 768)
+        latent_feat = F.normalize(self.visual.ln_post(inter_feat) @ self.visual.proj, dim=-1)  # (B, 512)
+        sim = torch.einsum('b d, m d -> b m', latent_feat, concept_vectors)
+        return sim.sum(dim=0)  # (M,) - sum over batch dimension
+    
+    def _compute_shallow_layer_similarity(self, block_output: torch.Tensor,
+                                          concept_vectors: torch.Tensor) -> torch.Tensor:
+        """Compute similarity for shallower layers using 768 dim internal space.
+        
+        Args:
+            block_output: (N, B, 768) - block output in internal space
+            concept_vectors: (M, 768) - concept vectors in internal space
+            
+        Returns:
+            sim: (M,) - similarity scores summed over batch and sequence
+        """
+        latent_feat = F.normalize(self.visual.ln_post(block_output), dim=-1)  # (N, B, 768)
+        sim = torch.einsum('n b d, m d -> n b m', latent_feat, concept_vectors)
+        sim = sim.sum(dim=0)  # (B, M) - sum over sequence dimension
+        return sim.sum(dim=0)  # (M,) - sum over batch dimension
+
     def dot_concept_vectors(self, concept_vectors: torch.Tensor):
         """Compute concept activation maps with chained gradient flow.
         
@@ -199,24 +231,11 @@ class OpenCLIPCVWrapper(CopyAttrWrapper):
             
             self.visual.zero_grad()
             
-            # Compute latent feature from block output
-            # block_output: (N, B, D) where D=768
+            # Compute similarity using appropriate method based on layer depth
             if is_first_layer:
-                # For deepest layer: project to 512 dim space to match concept_vectors
-                inter_feat = block_output.mean(dim=0)  # (B, 768)
-                latent_feat = F.normalize(self.visual.ln_post(inter_feat) @ self.visual.proj, dim=-1)  # (B, 512)
-                
-                # Compute similarity: latent_feat (B, 512) with concept_vectors (M, 512)
-                sim = torch.einsum('b d, m d -> b m', latent_feat, current_concept_vectors)
-                sim = sim.sum(dim=0)  # (M,) - sum over batch dimension
+                sim = self._compute_deepest_layer_similarity(block_output, current_concept_vectors)
             else:
-                # For shallower layers: use 768 dim space
-                latent_feat = F.normalize(self.visual.ln_post(block_output), dim=-1)  # (N, B, 768)
-                
-                # Compute similarity: latent_feat (N, B, D) with concept_vectors (M, D)
-                sim = torch.einsum('n b d, m d -> n b m', latent_feat, current_concept_vectors)
-                sim = sim.sum(dim=0)  # (B, M) - sum over sequence dimension
-                sim = sim.sum(dim=0)  # (M,) - sum over batch dimension
+                sim = self._compute_shallow_layer_similarity(block_output, current_concept_vectors)
             
             # Compute gradients w.r.t. attn_weight and input_token
             eye = torch.eye(sim.numel(), device=sim.device).view(sim.numel(), *sim.shape)

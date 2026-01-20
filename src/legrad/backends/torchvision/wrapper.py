@@ -177,7 +177,7 @@ class TorchvisionCVWrapper(CopyAttrWrapper):
     def _save_attn_hook(self, module, input, output):
         # output is (attn_output, attn_weights)
         self.attn_weights.append(output[1])
-        # Save input tokens - input[0] is query which is (B, N, D)
+        # Save the input tensor to self_attention: input[0] is (B, N, D) for batch-first attention
         self.input_tokens.append(input[0])
     
     def _save_block_hook(self, module, input, output):
