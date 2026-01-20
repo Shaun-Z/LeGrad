@@ -151,12 +151,13 @@ class TorchvisionCVWrapper(CopyAttrWrapper):
     def _save_attn_hook(self, module, input, output):
         # output is (attn_output, attn_weights)
         self.attn_weights.append(output[1])
-        # Save the input tensor to self_attention: input[0] is (B, N, D) for batch-first attention
-        self.input_tokens.append(input[0])
     
     def _save_block_hook(self, module, input, output):
         # Block output: (B, N, D) - transpose to (N, B, D)
         self.block_outputs.append(output.permute(1, 0, 2))
+        # Save block input (not attention input) to form gradient chain from output to input
+        # input[0] is the block input: (B, N, D) - keep as-is to preserve gradient connection
+        self.input_tokens.append(input[0])
 
     def dot_concept_vectors(self, concept_vectors: torch.Tensor):
         """Compute concept activation maps with chained gradient flow.

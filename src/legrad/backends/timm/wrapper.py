@@ -153,12 +153,13 @@ class TimmCVWrapper(CopyAttrWrapper):
         # output is (attn_output, attn_weights)
         # attn_weights: (B*num_heads, N, N)
         self.attn_weights.append(output[1])
-        # Save the normalized input to the attention module: input[0] is (B, N, D)
-        self.input_tokens.append(input[0])
     
     def _save_block_hook(self, module, input, output):
         # Block output: (B, N, D) - transpose to (N, B, D) to match format
         self.block_outputs.append(output.permute(1, 0, 2))
+        # Save block input (not attention input) to form gradient chain from output to input
+        # input[0] is the block input: (B, N, D) - keep as-is to preserve gradient connection
+        self.input_tokens.append(input[0])
 
     def dot_concept_vectors(self, concept_vectors: torch.Tensor):
         """Compute concept activation maps with chained gradient flow.

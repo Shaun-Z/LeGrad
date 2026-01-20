@@ -165,11 +165,12 @@ class OpenCLIPCVWrapper(CopyAttrWrapper):
 
     def _save_attn_hook(self, module, input, output):
         self.attn_weights.append(output[1])
-        # Save input tokens (the query input to attention) - input[0] is q_x which is (N, B, D)
-        self.input_tokens.append(input[0])
     
     def _save_block_hook(self, module, input, output):
         self.block_outputs.append(output)
+        # Save block input (not attention input) to form gradient chain from output to input
+        # input[0] is the block input: (N, B, D) for OpenCLIP
+        self.input_tokens.append(input[0])
 
     def _compute_deepest_layer_similarity(self, block_output: torch.Tensor, 
                                           concept_vectors: torch.Tensor) -> torch.Tensor:
