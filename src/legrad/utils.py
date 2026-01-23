@@ -112,7 +112,7 @@ def visualize_layerwise_maps(
     num_concepts = heatmaps.shape[2]
     num_layers = heatmaps.shape[0]
 
-    heatmaps = (heatmaps - heatmaps.min()) / (heatmaps.max() - heatmaps.min() + 1e-8)
+    heatmaps = (heatmaps - heatmaps.min()) / (heatmaps.max() - heatmaps.min())
     heatmaps_np = (heatmaps.detach().cpu().numpy() * 255).astype("uint8")  
 
     fig, axes = plt.subplots(

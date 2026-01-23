@@ -108,7 +108,7 @@ class TimmWrapper(CopyAttrWrapper):
 
         maps_min = maps.amin(dim=(-2, -1), keepdim=True)
         maps_max = maps.amax(dim=(-2, -1), keepdim=True)
-        maps = (maps - maps_min) / (maps_max - maps_min + 1e-8)
+        maps = (maps - maps_min) / (maps_max - maps_min)
         return maps
 
     def reset(self):
@@ -236,7 +236,7 @@ class TimmCVWrapper(CopyAttrWrapper):
 
         maps_min = maps.amin(dim=(-2, -1), keepdim=True)
         maps_max = maps.amax(dim=(-2, -1), keepdim=True)
-        maps = (maps - maps_min) / (maps_max - maps_min + 1e-8)
+        maps = (maps - maps_min) / (maps_max - maps_min)
         return maps
 
     def reset(self):
